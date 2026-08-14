@@ -1,0 +1,101 @@
+version: "3.8"
+
+x-airflow-common:
+  &airflow-common
+  build: .
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: /tmp/airflow-logs
+    AIRFLOW__SCHEDULER__CHILD_PROCESS_LOG_DIRECTORY: /tmp/airflow-child-logs
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__WEBSERVER__SECRET_KEY: 'beverage-demo-secret-key'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    DELTA_STORAGE: /opt/airflow/delta_storage
+    SALES_FILE: /opt/airflow/data/abi_bus_case1_beverage_sales_20210726.csv
+    CHANNEL_FILE: /opt/airflow/data/abi_bus_case1_beverage_channel_group_20210726.csv
+    PG_HOST: postgres
+    PG_PORT: "5432"
+    PG_DB: beverage
+    PG_USER: beverage
+    PG_PASSWORD: beverage
+  volumes:
+    - ./dags:/home/jovyan/airflow/dags
+    - ./notebooks:/opt/airflow/notebooks
+    - ./notebooks:/home/jovyan/work
+    - ./executed_notebooks:/opt/airflow/executed_notebooks
+    - ./delta_storage:/opt/airflow/delta_storage
+    - ./temp:/opt/airflow/data
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_postgres.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    command: bash -c "airflow db init; airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@local || true"
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: airflow scheduler
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  spark-jupyter:
+    build: .
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./delta_storage:/home/jovyan/delta_storage
+      - ./temp:/home/jovyan/data
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - DELTA_STORAGE=/home/jovyan/delta_storage
+      - SALES_FILE=/home/jovyan/data/abi_bus_case1_beverage_sales_20210726.csv
+      - CHANNEL_FILE=/home/jovyan/data/abi_bus_case1_beverage_channel_group_20210726.csv
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_DB=beverage
+      - PG_USER=beverage
+      - PG_PASSWORD=beverage
+    command: >
+      start-notebook.sh
+      --NotebookApp.token=''
+      --NotebookApp.password=''
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:

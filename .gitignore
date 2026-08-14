@@ -1,1 +1,19 @@
-temp/
+# Delta Lake storage — ignore all data files but keep folder structure
+delta_storage/**
+!delta_storage/
+!delta_storage/**/
+
+# Executed notebooks output
+executed_notebooks/**
+!executed_notebooks/
+
+# Temp folder — ignore everything EXCEPT the source CSVs
+temp/**
+!temp/
+!temp/*.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
